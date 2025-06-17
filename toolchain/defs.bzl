@@ -181,16 +181,20 @@ def _zig_repository_impl(repository_ctx):
         sha256 = zig_sha256,
     )
 
-    cache_prefix = repository_ctx.os.environ.get("HERMETIC_CC_TOOLCHAIN_CACHE_PREFIX", "")
-    if cache_prefix == "":
+    base_cache_prefix = repository_ctx.os.environ.get("HERMETIC_CC_TOOLCHAIN_CACHE_PREFIX", "")
+    if base_cache_prefix == "":
         if host_os == "windows":
-            cache_prefix = "C:\\\\Temp\\\\zig-cache"
+            base_cache_prefix = "C:\\\\Temp\\\\zig-cache"
         elif host_os == "macos":
-            cache_prefix = "/var/tmp/zig-cache"
+            base_cache_prefix = "/var/tmp/zig-cache"
         elif host_os == "linux":
-            cache_prefix = "/tmp/zig-cache"
+            base_cache_prefix = "/tmp/zig-cache"
         else:
             fail("unknown os: {}".format(host_os))
+
+    # Create configuration-specific cache directory to prevent concurrent build collisions
+    repo_name = repository_ctx.name
+    cache_prefix = _paths_join(base_cache_prefix, repo_name, exec_platform)
 
     repository_ctx.template(
         "tools/zig-wrapper.zig",
