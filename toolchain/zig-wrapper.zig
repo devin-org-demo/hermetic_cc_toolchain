@@ -161,6 +161,22 @@ fn execUnix(arena: mem.Allocator, params: ExecParams) u8 {
     return 1;
 }
 
+fn makeSuffix(allocator: std.mem.Allocator, pwd: []const u8) ![]const u8 {
+    var it = std.mem.tokenize(u8, pwd, "/");
+
+    while (it.next()) |segment| {
+        if (std.mem.startsWith(u8, segment, "k8-opt-")) {
+            var hasher = std.hash.Wyhash.init(0);
+            hasher.update(segment);
+            const hash_value = hasher.final();
+            return std.fmt.allocPrint(allocator, "config-{x}", .{hash_value});
+        }
+    }
+
+    // no "k8-opt-" found
+    return std.fmt.allocPrint(allocator, "config-catchall", .{});
+}
+
 // argv_it is an object that has such method:
 //     fn next(self: *Self) ?[]const u8
 // in non-testing code it is *process.ArgIterator.
@@ -218,8 +234,19 @@ fn parseArgs(
         return parseFatal(arena, "error getting env: {s}", .{@errorName(err)});
 
     try env.put("ZIG_LIB_DIR", zig_lib_dir);
-    try env.put("ZIG_LOCAL_CACHE_DIR", CACHE_DIR);
-    try env.put("ZIG_GLOBAL_CACHE_DIR", CACHE_DIR);
+
+    // Get the current working directory (PWD)
+    const allocator = std.heap.page_allocator;
+    const pwd = std.fs.cwd().realpathAlloc(allocator, ".") catch {
+        std.process.exit(1);
+    };
+    defer allocator.free(pwd);
+
+    const suffix = try makeSuffix(arena, pwd);
+    const cache_dir = try std.fmt.allocPrint(arena, "{s}/{s}", .{ CACHE_DIR, suffix });
+
+    try env.put("ZIG_LOCAL_CACHE_DIR", cache_dir);
+    try env.put("ZIG_GLOBAL_CACHE_DIR", cache_dir);
 
     // args is the path to the zig binary and args to it.
     var args = ArrayListUnmanaged([]const u8){};
